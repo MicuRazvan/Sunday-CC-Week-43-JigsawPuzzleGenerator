@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Play Jigsaw Puzzle</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f0f2f5;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+            box-sizing: border-box;
+        }
+
+        h1 {
+            color: #1f2937;
+            margin: 0 0 15px 0;
+            font-size: 1.75rem;
+        }
+
+        /* Floating reference image in the top-right corner */
+        .reference-panel {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            width: 200px;
+            height: 200px;
+            background: white;
+            padding: 6px;
+            border-radius: 8px;
+            box-shadow: 0 6px 15px rgba(0,0,0,0.18);
+            border: 2px solid #cbd5e1;
+            z-index: 1000;
+        }
+        .reference-panel img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            border-radius: 4px;
+        }
+
+        /* Centered game container layout */
+        .game-layout {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 20px;
+        }
+
+        /* Centered game board canvas. Width: 1200px, Height: 700px. Board sits in middle. */
+        #game-workspace {
+            position: relative;
+            width: 1200px;
+            height: 700px;
+            background-color: #ffffff;
+            border: 1px solid #e5e7eb;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+            overflow: hidden;
+        }
+
+        /* Board dimensions (480x480). Positioned centered: Left = (1200-480)/2 = 360px. Top = (700-480)/2 = 110px. */
+        #board {
+            position: absolute;
+            left: 360px;
+            top: 110px;
+            width: 480px;
+            height: 480px;
+            border: 3px solid #374151;
+            background-color: #f3f4f6;
+            box-sizing: content-box;
+        }
+
+        /* Styling for draggable puzzle pieces */
+        .puzzle-piece {
+            position: absolute;
+            cursor: grab;
+            z-index: 10;
+            touch-action: none;
+        }
+        .puzzle-piece img {
+            width: 100%;
+            height: 100%;
+            display: block;
+            border: 1px solid rgba(255, 255, 255, 0.8);
+            box-shadow: 0 3px 5px rgba(0,0,0,0.25);
+            border-radius: 2px;
+            pointer-events: none;
+        }
+        .puzzle-piece.locked {
+            cursor: default;
+        }
+        .puzzle-piece.locked img {
+            border: none;
+            box-shadow: none;
+            border-radius: 0;
+        }
+
+        /* Control bar below the board */
+        .control-panel {
+            background-color: white;
+            padding: 15px 30px;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+            border: 1px solid #e5e7eb;
+            width: 100%;
+            max-width: 800px;
+            box-sizing: border-box;
+        }
+        .control-panel form {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+        .form-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .form-group label {
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: #4b5563;
+        }
+        .form-group input[type="file"], .form-group select {
+            padding: 6px 10px;
+            border: 1px solid #cbd5e1;
+            border-radius: 4px;
+            outline: none;
+            font-size: 0.85rem;
+        }
+        .control-panel button {
+            padding: 8px 20px;
+            background-color: #2563eb;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            font-size: 0.9rem;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        .control-panel button:hover {
+            background-color: #1d4ed8;
+        }
+
+        /* Victory Popup Screen */
+        #win-banner {
+            display: none;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background-color: rgba(16, 185, 129, 0.95);
+            color: white;
+            padding: 20px 45px;
+            border-radius: 8px;
+            font-size: 1.5rem;
+            font-weight: bold;
+            z-index: 2000;
+            box-shadow: 0 10px 20px rgba(0,0,0,0.2);
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+
+<!-- Floating Reference Panel -->
+<div class="reference-panel">
+    <img th:src="'data:image/png;base64,' + ${referenceImage}" alt="Reference Preview" />
+</div>
+
+<h1>Jigsaw Puzzle Generator</h1>
+
+<div class="game-layout">
+    <!-- Main Workspace -->
+    <div id="game-workspace">
+        <!-- Win Notification -->
+        <div id="win-banner">🎉 Congratulations! You solved the puzzle!</div>
+
+        <!-- Centered Puzzle Board target frame -->
+        <div id="board">
+            <!-- Helper Grid Line Markers -->
+            <div th:each="piece : ${pieces}"
+                 th:style="'position: absolute; border: 1px dashed #d1d5db; box-sizing: border-box; ' +
+                               'left: ' + ${piece.targetX} + 'px; ' +
+                               'top: ' + ${piece.targetY} + 'px; ' +
+                               'width: ' + ${pieceWidth} + 'px; ' +
+                               'height: ' + ${pieceHeight} + 'px;'">
+            </div>
+        </div>
+
+        <!-- Draggable Puzzle Pieces -->
+        <div th:each="piece : ${pieces}"
+             class="puzzle-piece"
+             th:id="'piece-' + ${piece.id}"
+             th:data-target-x="${piece.targetX}"
+             th:data-target-y="${piece.targetY}"
+             th:style="'width: ' + ${pieceWidth} + 'px; height: ' + ${pieceHeight} + 'px;'"
+             onpointerdown="startDrag(event, this)">
+            <img th:src="'data:image/png;base64,' + ${piece.base64Image}" alt="Piece" />
+        </div>
+    </div>
+
+    <!-- Controls located directly below the main workspace -->
+    <div class="control-panel">
+        <form th:action="@{/generate}" method="POST" enctype="multipart/form-data">
+            <div class="form-group">
+                <label for="file">Change Image:</label>
+                <input type="file" id="file" name="file" accept="image/*" required />
+            </div>
+
+            <div class="form-group">
+                <label for="pieces">Piece Count:</label>
+                <select id="pieces" name="pieces">
+                    <option value="16" th:selected="${totalPieces == 16}">16 Pieces (4x4)</option>
+                    <option value="64" th:selected="${totalPieces == 64}">64 Pieces (8x8)</option>
+                    <option value="128" th:selected="${totalPieces == 128}">128 Pieces (16x8)</option>
+                </select>
+            </div>
+
+            <button type="submit">Start New Game</button>
+        </form>
+    </div>
+</div>
+
+<script th:inline="javascript">
+    const totalPieces =  16;
+
+    let activePiece = null;
+    let dragOffset = { x: 0, y: 0 };
+    let lockedCount = 0;
+
+    const workspace = document.getElementById('game-workspace');
+    // Exact location of board frame inside game-workspace
+    const boardOffset = { x: 360, y: 110 };
+
+    // Distributes the pieces randomly to one of four margins outside the center board bounds
+    window.addEventListener('DOMContentLoaded', () => {
+        const pieces = document.querySelectorAll('.puzzle-piece');
+
+        // Layout margins defining the outer boundary bounds
+        const wsW = 1200;
+        const wsH = 700;
+
+        pieces.forEach((piece) => {
+            const w = parseInt(piece.style.width);
+            const h = parseInt(piece.style.height);
+
+            // Split scattering regions into 4 pools around the center 480x480 board (offset 360, 110)
+            const region = Math.floor(Math.random() * 4);
+            let rx, ry;
+
+            switch (region) {
+                case 0: // Left Margin Space
+                    rx = 15 + Math.random() * (320 - w - 15);
+                    ry = 15 + Math.random() * (wsH - h - 30);
+                    break;
+                case 1: // Right Margin Space
+                    rx = 860 + Math.random() * (wsW - w - 875);
+                    ry = 15 + Math.random() * (wsH - h - 30);
+                    break;
+                case 2: // Top Margin Space
+                    rx = 340 + Math.random() * (840 - w - 340);
+                    ry = 15 + Math.random() * (90 - h - 15);
+                    break;
+                case 3: // Bottom Margin Space
+                default:
+                    rx = 340 + Math.random() * (840 - w - 340);
+                    ry = 610 + Math.random() * (wsH - h - 625);
+                    break;
+            }
+
+            piece.style.left = `${Math.floor(Math.max(0, rx))}px`;
+            piece.style.top = `${Math.floor(Math.max(0, ry))}px`;
+        });
+    });
+
+    function startDrag(e, piece) {
+        if (piece.classList.contains('locked')) return;
+
+        activePiece = piece;
+        activePiece.style.zIndex = '1000'; // Foreground layer overlap
+
+        const rect = piece.getBoundingClientRect();
+        dragOffset.x = e.clientX - rect.left;
+        dragOffset.y = e.clientY - rect.top;
+
+        document.addEventListener('pointermove', onDrag);
+        document.addEventListener('pointerup', endDrag);
+    }
+
+    function onDrag(e) {
+        if (!activePiece) return;
+
+        const wsRect = workspace.getBoundingClientRect();
+        let x = e.clientX - wsRect.left - dragOffset.x;
+        let y = e.clientY - wsRect.top - dragOffset.y;
+
+        const pieceW = parseInt(activePiece.style.width);
+        const pieceH = parseInt(activePiece.style.height);
+
+        // Container-boundary calculations
+        if (x < 0) x = 0;
+        if (y < 0) y = 0;
+        if (x > wsRect.width - pieceW) x = wsRect.width - pieceW;
+        if (y > wsRect.height - pieceH) y = wsRect.height - pieceH;
+
+        activePiece.style.left = `${x}px`;
+        activePiece.style.top = `${y}px`;
+    }
+
+    function endDrag(e) {
+        if (!activePiece) return;
+
+        const targetX = parseInt(activePiece.getAttribute('data-target-x'));
+        const targetY = parseInt(activePiece.getAttribute('data-target-y'));
+
+        // Match coordinates targeting the center board layout spacing
+        const finalX = boardOffset.x + targetX;
+        const finalY = boardOffset.y + targetY;
+
+        const currentX = parseInt(activePiece.style.left);
+        const currentY = parseInt(activePiece.style.top);
+
+        const snapThreshold = 20; // Maximum distance to snap pieces in place (px)
+
+        if (Math.abs(currentX - finalX) < snapThreshold && Math.abs(currentY - finalY) < snapThreshold) {
+            // Snap piece securely into its correct coordinate position
+            activePiece.style.left = `${finalX}px`;
+            activePiece.style.top = `${finalY}px`;
+            activePiece.style.zIndex = '5';
+            activePiece.classList.add('locked');
+
+            lockedCount++;
+            checkWinCondition();
+        } else {
+            activePiece.style.zIndex = '10'; // Return back to standard dynamic piece depth
+        }
+
+        activePiece = null;
+        document.removeEventListener('pointermove', onDrag);
+        document.removeEventListener('pointerup', endDrag);
+    }
+
+    function checkWinCondition() {
+        if (lockedCount === totalPieces) {
+            document.getElementById('win-banner').style.display = 'block';
+        }
+    }
+</script>
+</body>
+</html>
